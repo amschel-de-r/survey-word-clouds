@@ -1,6 +1,8 @@
 import time
 from pathlib import Path
 
+from streamlit_autorefresh import st_autorefresh
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.patches as mpatches
@@ -69,7 +71,7 @@ def make_wc_dark(freq_dict, team, size=700, padding=12):
         background_color=DARK_BG,
         mask=circular_mask(size, padding),
         max_words=50, prefer_horizontal=0.85,
-        relative_scaling=0.7, min_font_size=16, max_font_size=120,
+        relative_scaling=0.55, min_font_size=16, max_font_size=120,
         color_func=color_func_for(WORD_DARK[team]),
         collocations=False, repeat=False,
     ).generate_from_frequencies(freq_dict)
@@ -81,7 +83,7 @@ def make_wc_light(freq_dict, team, size=700, padding=12):
         background_color=None, mode='RGBA',
         mask=circular_mask(size, padding),
         max_words=50, prefer_horizontal=0.85,
-        relative_scaling=0.7, min_font_size=16, max_font_size=120,
+        relative_scaling=0.55, min_font_size=16, max_font_size=120,
         color_func=color_func_for(WORD_LIGHT[team]),
         collocations=False, repeat=False,
     ).generate_from_frequencies(freq_dict)
@@ -406,9 +408,7 @@ else:
         st.info('No Q3 responses yet.')
 
 # ── Auto-refresh ──────────────────────────────────────────────────────────────
-# Sleeps, then clears the data cache and reruns the script.
-# Any user interaction (tab switch, toggle) will interrupt the sleep immediately.
+# Browser-side timer triggers a rerun after `interval` seconds.
+# The script itself completes immediately, so no widgets are left in a faded state.
 
-time.sleep(interval)
-st.cache_data.clear()
-st.rerun()
+st_autorefresh(interval=interval * 1000, key='data_refresh')
