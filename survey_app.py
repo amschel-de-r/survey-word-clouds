@@ -55,19 +55,19 @@ def color_func_for(palette):
     return cf
 
 
-def circular_mask(size=700):
+def circular_mask(size=700, padding=12):
     y, x = np.ogrid[:size, :size]
-    outside = (x - size//2)**2 + (y - size//2)**2 > (size//2 - 12)**2
+    outside = (x - size//2)**2 + (y - size//2)**2 > (size//2 - padding)**2
     arr = np.zeros((size, size), dtype=np.uint8)
     arr[outside] = 255
     return arr
 
 
-def make_wc_dark(freq_dict, team, size=700):
+def make_wc_dark(freq_dict, team, size=700, padding=12):
     return WordCloud(
         width=size, height=size,
         background_color=DARK_BG,
-        mask=circular_mask(size),
+        mask=circular_mask(size, padding),
         max_words=50, prefer_horizontal=0.85,
         relative_scaling=0.7, min_font_size=16, max_font_size=120,
         color_func=color_func_for(WORD_DARK[team]),
@@ -75,11 +75,11 @@ def make_wc_dark(freq_dict, team, size=700):
     ).generate_from_frequencies(freq_dict)
 
 
-def make_wc_light(freq_dict, team, size=700):
+def make_wc_light(freq_dict, team, size=700, padding=12):
     return WordCloud(
         width=size, height=size,
         background_color=None, mode='RGBA',
-        mask=circular_mask(size),
+        mask=circular_mask(size, padding),
         max_words=50, prefer_horizontal=0.85,
         relative_scaling=0.7, min_font_size=16, max_font_size=120,
         color_func=color_func_for(WORD_LIGHT[team]),
@@ -95,7 +95,7 @@ def add_glow(ax, color):
         ))
 
 
-def make_radial_bg_pil(hex_color, size=700, max_alpha=0.22):
+def make_radial_bg_pil(hex_color, size=700, padding=12, max_alpha=0.22):
     """PIL RGBA image: team tint at center fading to transparent at circle edge."""
     from matplotlib.colors import to_rgb
     from PIL import Image as PILImage
@@ -103,7 +103,7 @@ def make_radial_bg_pil(hex_color, size=700, max_alpha=0.22):
     cx = cy = size // 2
     y, x = np.ogrid[:size, :size]
     dist = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-    circle_r = cx - 12          # matches circular_mask radius
+    circle_r = cx - padding     # matches circular_mask radius
     t = np.clip(dist / circle_r, 0, 1)
     alpha = ((1.0 - t) ** 2 * max_alpha * 255).clip(0, 255).astype(np.uint8)
     arr = np.zeros((size, size, 4), dtype=np.uint8)
@@ -114,10 +114,10 @@ def make_radial_bg_pil(hex_color, size=700, max_alpha=0.22):
     return PILImage.fromarray(arr, mode='RGBA')
 
 
-def composite_wc(wc, hex_color):
+def composite_wc(wc, hex_color, padding=12):
     """Alpha-composite the word cloud over a radial gradient background."""
     from PIL import Image as PILImage
-    bg = make_radial_bg_pil(hex_color, size=wc.width)
+    bg = make_radial_bg_pil(hex_color, size=wc.width, padding=padding)
     fg = wc.to_image().convert('RGBA')   # force RGBA regardless of wc mode
     return np.array(PILImage.alpha_composite(bg, fg))
 
@@ -127,12 +127,14 @@ def _reveal(state_key):
 
 
 def reveal_placeholder(btn_key, state_key, height_px):
-    """Button immediately below the header, then reserved blank space."""
+    """Button vertically centred in reserved blank space."""
+    half = height_px // 2
+    st.markdown(f'<div style="height:{half}px"></div>', unsafe_allow_html=True)
     _, btn_col, _ = st.columns([2, 1, 2])
     with btn_col:
         st.button('Reveal', key=btn_key, use_container_width=True,
                   on_click=_reveal, args=(state_key,))
-    st.markdown(f'<div style="height:{height_px}px"></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="height:{half}px"></div>', unsafe_allow_html=True)
 
 # ── Data loading ──────────────────────────────────────────────────────────────
 
@@ -155,6 +157,11 @@ def load_data():
 
 # ── Figure builders ───────────────────────────────────────────────────────────
 
+_WC_SIZE       = 700
+_WC_PADDING    = 50   # words are constrained this far from the circle edge
+_OUTLINE_PAD   = 12   # outline sits this far from the circle edge (gap = _WC_PADDING - _OUTLINE_PAD)
+
+
 def build_triple_fig(df, col, dark):
     fig, axes = plt.subplots(1, 3, figsize=(18, 7))
     fig.patch.set_facecolor('none')
@@ -169,14 +176,25 @@ def build_triple_fig(df, col, dark):
 
         ax.set_facecolor('none')
         if dark:
-            wc = make_wc_dark(freq, team)
+            wc = make_wc_dark(freq, team, size=_WC_SIZE, padding=_WC_PADDING)
             ax.imshow(wc, interpolation='bilinear')
             ax.axis('off')
             add_glow(ax, TEAM_ACCENTS[team])
         else:
-            wc = make_wc_light(freq, team)
-            ax.imshow(composite_wc(wc, TEAM_ACCENTS[team]), interpolation='bilinear')
+            wc = make_wc_light(freq, team, size=_WC_SIZE, padding=_WC_PADDING)
+            ax.imshow(composite_wc(wc, TEAM_ACCENTS[team], _OUTLINE_PAD), interpolation='bilinear')
             ax.axis('off')
+
+        # Faint circle outline near the outer edge
+        outline = mpatches.Circle(
+            (_WC_SIZE / 2, _WC_SIZE / 2), _WC_SIZE / 2 - _OUTLINE_PAD,
+            fill=False,
+            edgecolor=TEAM_ACCENTS[team],
+            linewidth=1.0,
+            alpha=0.12,
+            zorder=5,
+        )
+        ax.add_patch(outline)
 
         ax.set_title(team, fontsize=15, fontweight='bold',
                      color=TEAM_ACCENTS[team], pad=10)
@@ -292,6 +310,11 @@ st.markdown(
 
     /* Metadata line */
     .stMarkdown div[style*="text-align:right"] { color: #1B8B85 !important; }
+
+    /* Hide disabled (just-clicked) reveal buttons during rerun */
+    section[data-testid="stMain"] div[data-testid="stButton"] > button:disabled {
+        display: none !important;
+    }
 
     /* Reveal buttons — scoped to main content only, not sidebar or toolbar */
     section[data-testid="stMain"] div[data-testid="stButton"] > button {
